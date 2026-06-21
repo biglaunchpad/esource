@@ -45,7 +45,7 @@ Same code, three targets, differing by catalog. test and prod run as a service p
 
 | Target | Catalog     | Notes                      |
 |--------|-------------|----------------------------|
-| dev    | `workspace` | default                    |
+| dev    | `iedr_dev`  | default                    |
 | test   | `iedr_test` | run_as service principal   |
 | prod   | `iedr_prod` | production mode, run_as SP  |
 
@@ -61,7 +61,7 @@ databricks bundle deploy -t dev -p iedr-trial
 databricks bundle run iedr_setup -t dev -p iedr-trial
 
 # 3. drop the month's files into the landing volume
-V=dbfs:/Volumes/workspace/bronze/iedr_landing
+V=dbfs:/Volumes/iedr_dev/bronze/iedr_landing
 databricks fs cp ./data/utility1_circuits.csv     $V/u1_circuits/      -p iedr-trial
 databricks fs cp ./data/utility2_circuits.csv     $V/u2_circuits/      -p iedr-trial
 databricks fs cp ./data/utility1_install_der.csv  $V/u1_installed_der/ -p iedr-trial
@@ -80,9 +80,9 @@ Bronze counts from the sample data: 64,539 / 1,909 / 13,727 / 25,537 / 1,688 / 3
 Silver current-state counts:
 
 ```sql
-SELECT 'circuit' t, count(*) FROM workspace.silver.circuit WHERE is_current
-UNION ALL SELECT 'installed_der', count(*) FROM workspace.silver.installed_der WHERE is_current
-UNION ALL SELECT 'planned_der',   count(*) FROM workspace.silver.planned_der   WHERE is_current;
+SELECT 'circuit' t, count(*) FROM iedr_dev.silver.circuit WHERE is_current
+UNION ALL SELECT 'installed_der', count(*) FROM iedr_dev.silver.installed_der WHERE is_current
+UNION ALL SELECT 'planned_der',   count(*) FROM iedr_dev.silver.planned_der   WHERE is_current;
 ```
 
 circuit **2,200** (U1's 64,539 segments rolled up to 291, plus U2's 1,909), installed_der
@@ -91,14 +91,14 @@ circuit **2,200** (U1's 64,539 segments rolled up to 291, plus U2's 1,909), inst
 The two serving queries:
 
 ```sql
-SELECT * FROM workspace.platinum.feeder WHERE max_hosting_capacity_mw > 8;
-SELECT * FROM workspace.platinum.der_by_feeder WHERE circuit_id = '36_30_45151';
+SELECT * FROM iedr_dev.platinum.feeder WHERE max_hosting_capacity_mw > 8;
+SELECT * FROM iedr_dev.platinum.der_by_feeder WHERE circuit_id = '36_30_45151';
 ```
 
 Data-quality metrics (separate `monitoring` schema, not part of the served product):
 
 ```sql
-SELECT * FROM workspace.monitoring.data_quality ORDER BY entity, source_utility;
+SELECT * FROM iedr_dev.monitoring.data_quality ORDER BY entity, source_utility;
 ```
 
 Both serving tables are liquid-clustered on the column they're filtered by and have Change
@@ -120,6 +120,5 @@ Auth is GitHub OIDC (no tokens in the repo). Set once in GitHub:
 - a GitHub Actions federation policy on the SP, subject `repo:biglaunchpad/esource:environment:<env>`
 - `dev` / `test` / `prod` environments, with a required reviewer on `prod`
 
-test/prod deploy into `iedr_test` / `iedr_prod`. On a single trial workspace only the
-`workspace` catalog exists, so dev is the live target; test/prod come online once those
-catalogs (or separate workspaces) exist.
+dev/test/prod deploy into the `iedr_dev` / `iedr_test` / `iedr_prod` catalogs in the same
+workspace — catalog-per-environment, the standard Unity Catalog isolation boundary.

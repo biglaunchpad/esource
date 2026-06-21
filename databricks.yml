@@ -20,7 +20,7 @@ targets:
   dev:
     default: true
     variables:
-      catalog: workspace
+      catalog: iedr_dev
   test:
     variables:
       catalog: iedr_test

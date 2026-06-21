@@ -1,14 +1,14 @@
 # Deploys the bundle on each trigger:
-#   pull request -> dev    (validate + deploy so the change can be tried)
-#   merge to main -> test  (deploy + run setup)
-#   tag vX.Y.Z   -> prod   (deploy + run setup, gated by the prod environment)
+#   pull request  -> dev    (validate + deploy)
+#   merge to main -> test   (deploy + run setup)
+#   tag vX.Y.Z    -> prod   (deploy + run setup; gate with a required reviewer on the prod env)
 #
-# Auth uses GitHub OIDC, so there are no tokens in the repo. Set these once:
-#   - repo/Environment variable DATABRICKS_HOST            (workspace URL)
-#   - repo/Environment secret   DATABRICKS_CLIENT_ID       (service principal UUID)
-#   - bundle var service_principal_id                      (same SP app ID, for run_as)
-# and add a GitHub Actions federation policy on the service principal with subject
-#   repo:biglaunchpad/esource:environment:<dev|test|prod>
+# Auth: service principal OAuth (M2M). Set these in the repo
+# (Settings -> Secrets and variables -> Actions):
+#   - variable DATABRICKS_HOST          workspace URL
+#   - variable DATABRICKS_CLIENT_ID     service principal Application ID
+#   - secret   DATABRICKS_CLIENT_SECRET an OAuth secret generated for that SP
+# The same client ID is passed as run_as for test/prod.
 
 name: ci
 
@@ -22,14 +22,10 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
-permissions:
-  id-token: write
-  contents: read
-
 env:
-  DATABRICKS_AUTH_TYPE: github-oidc
   DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
-  DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+  DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+  DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
 
 jobs:
   dev:
@@ -49,15 +45,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: databricks/setup-cli@main
-      - run: databricks bundle deploy -t test --var "service_principal_id=${{ vars.SERVICE_PRINCIPAL_ID }}"
-      - run: databricks bundle run iedr_setup -t test --var "service_principal_id=${{ vars.SERVICE_PRINCIPAL_ID }}"
+      - run: databricks bundle deploy -t test --var "service_principal_id=${{ vars.DATABRICKS_CLIENT_ID }}"
+      - run: databricks bundle run iedr_setup -t test --var "service_principal_id=${{ vars.DATABRICKS_CLIENT_ID }}"
 
   prod:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    environment: prod          # add a required reviewer here for an approval gate
+    environment: prod
     steps:
       - uses: actions/checkout@v4
       - uses: databricks/setup-cli@main
-      - run: databricks bundle deploy -t prod --var "service_principal_id=${{ vars.SERVICE_PRINCIPAL_ID }}"
-      - run: databricks bundle run iedr_setup -t prod --var "service_principal_id=${{ vars.SERVICE_PRINCIPAL_ID }}"
+      - run: databricks bundle deploy -t prod --var "service_principal_id=${{ vars.DATABRICKS_CLIENT_ID }}"
+      - run: databricks bundle run iedr_setup -t prod --var "service_principal_id=${{ vars.DATABRICKS_CLIENT_ID }}"
