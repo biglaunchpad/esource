@@ -112,13 +112,15 @@ Data Feed on for a future Lakebase sync.
 - merge to `main` -> deploy **test** + run setup
 - tag `v*` -> deploy **prod** + run setup (gated by the `prod` environment)
 
-Auth is GitHub OIDC (no tokens in the repo). Set once in GitHub:
+Auth is service-principal OAuth (M2M): a client secret stored in GitHub, not in the repo.
+Set once in GitHub (Settings -> Secrets and variables -> Actions):
 
 - variable `DATABRICKS_HOST` — workspace URL
-- secret `DATABRICKS_CLIENT_ID` — service principal UUID
-- variable `SERVICE_PRINCIPAL_ID` — same SP app ID (used for `run_as`)
-- a GitHub Actions federation policy on the SP, subject `repo:biglaunchpad/esource:environment:<env>`
+- variable `DATABRICKS_CLIENT_ID` — service principal Application ID
+- secret `DATABRICKS_CLIENT_SECRET` — an OAuth secret generated for that SP
 - `dev` / `test` / `prod` environments, with a required reviewer on `prod`
+
+The same client ID is passed as `run_as` for test and prod via `--var service_principal_id=...`.
 
 dev/test/prod deploy into the `iedr_dev` / `iedr_test` / `iedr_prod` catalogs in the same
 workspace — catalog-per-environment, the standard Unity Catalog isolation boundary.
