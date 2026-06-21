@@ -1,0 +1,116 @@
+# IEDR utility lakehouse — Databricks Asset Bundle.
+# Deploys the schemas, landing volume, and two jobs into an existing catalog.
+# The catalog itself is owned by the platform team, so we deploy into it rather
+# than create it (a Default-Storage workspace can't create catalogs by API anyway).
+
+bundle:
+  name: iedr-utility-lakehouse
+
+variables:
+  catalog:
+    description: Catalog to deploy into
+    default: workspace
+  service_principal_id:
+    description: Service principal app ID used as run_as in test/prod (passed in by CI)
+    default: ""
+
+# dev / test / prod differ only by catalog. test and prod run as a service
+# principal so deploys don't depend on whoever happens to be logged in.
+targets:
+  dev:
+    default: true
+    variables:
+      catalog: workspace
+  test:
+    variables:
+      catalog: iedr_test
+    run_as:
+      service_principal_name: ${var.service_principal_id}
+  prod:
+    mode: production
+    variables:
+      catalog: iedr_prod
+    run_as:
+      service_principal_name: ${var.service_principal_id}
+
+resources:
+  schemas:
+    bronze:
+      catalog_name: ${var.catalog}
+      name: bronze
+      comment: Raw landing tables, one per source file
+    silver:
+      catalog_name: ${var.catalog}
+      name: silver
+      comment: Conformed model with SCD2 history
+    gold:
+      catalog_name: ${var.catalog}
+      name: gold
+      comment: Current-state entities
+    platinum:
+      catalog_name: ${var.catalog}
+      name: platinum
+      comment: Serving tables for the app
+    monitoring:
+      catalog_name: ${var.catalog}
+      name: monitoring
+      comment: Data-quality / freshness metrics
+
+  volumes:
+    iedr_landing:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.bronze.name}
+      name: iedr_landing
+      volume_type: MANAGED
+      comment: Monthly file drop, read by Auto Loader
+
+  jobs:
+    # DDL only. Run once to bootstrap, and again when the schema changes (apply
+    # column changes here as ALTER statements). Not scheduled.
+    iedr_setup:
+      name: iedr_setup_${bundle.target}
+      tasks:
+        - task_key: setup
+          notebook_task:
+            notebook_path: ./src/setup.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+    # Daily/monthly ETL, data only. Assumes iedr_setup has already run.
+    # bronze -> silver -> gold -> platinum, plus monitoring off silver in parallel.
+    iedr_pipeline:
+      name: iedr_pipeline_${bundle.target}
+      tasks:
+        - task_key: bronze_ingest
+          notebook_task:
+            notebook_path: ./src/bronze_ingest.py
+            base_parameters:
+              catalog: ${var.catalog}
+        - task_key: silver_build
+          depends_on:
+            - task_key: bronze_ingest
+          notebook_task:
+            notebook_path: ./src/silver_build.py
+            base_parameters:
+              catalog: ${var.catalog}
+        - task_key: gold_build
+          depends_on:
+            - task_key: silver_build
+          notebook_task:
+            notebook_path: ./src/gold_build.py
+            base_parameters:
+              catalog: ${var.catalog}
+        - task_key: platinum_build
+          depends_on:
+            - task_key: gold_build
+          notebook_task:
+            notebook_path: ./src/platinum_build.py
+            base_parameters:
+              catalog: ${var.catalog}
+        - task_key: monitoring_build
+          depends_on:
+            - task_key: silver_build
+          notebook_task:
+            notebook_path: ./src/monitoring_build.py
+            base_parameters:
+              catalog: ${var.catalog}
