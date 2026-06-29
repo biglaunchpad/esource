@@ -102,7 +102,8 @@ CREATE TABLE IF NOT EXISTS {CAT}.platinum.feeder (
   map_color STRING, shape_length DOUBLE, segment_count INT,
   installed_der_count BIGINT, installed_capacity_mw DOUBLE,
   planned_der_count BIGINT, planned_capacity_mw DOUBLE, total_der_count BIGINT,
-  data_loaded_at TIMESTAMP
+  data_loaded_at TIMESTAMP,
+  pipeline_version STRING
 )
 CLUSTER BY (max_hosting_capacity_mw)
 COMMENT 'Feeder current state + DER rollups + per-feeder freshness. Serves: max_hosting_capacity_mw > :x'
